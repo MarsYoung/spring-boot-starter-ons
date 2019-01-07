@@ -1,12 +1,14 @@
 package com.marsyoung.factory;
 
+import com.alibaba.fastjson.JSON;
 import com.aliyun.openservices.ons.api.PropertyKeyConst;
 import com.aliyun.openservices.ons.api.bean.ConsumerBean;
 import com.aliyun.openservices.ons.api.bean.ProducerBean;
-import com.aliyun.openservices.shade.com.alibaba.fastjson.JSON;
+import com.marsyoung.OnsConstant;
 import com.marsyoung.annotation.OnsConsumer;
 import com.marsyoung.annotation.OnsProducer;
 import com.marsyoung.config.OnsProperty;
+import com.marsyoung.exception.OnsStarterException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.aop.support.AopUtils;
@@ -24,9 +26,10 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.Properties;
 
-@Slf4j
+
 @Configuration
 @EnableConfigurationProperties(OnsProperty.class)
+@Slf4j
 public class OnsConfiguration implements ApplicationContextAware, BeanPostProcessor {
 
     @Autowired
@@ -66,7 +69,6 @@ public class OnsConfiguration implements ApplicationContextAware, BeanPostProces
                             field.set(bean, value);
                         }
                     }
-
                 } catch (Exception e) {
                     throw new BeanInitializationException("Failed to init remote service reference at filed " + field.getName() + " in class " + bean.getClass().getName(), e);
                 }
@@ -106,19 +108,16 @@ public class OnsConfiguration implements ApplicationContextAware, BeanPostProces
         //去Springfactory中寻找有木有这个bean，没有的话创建一个，并放入Spring的factoryBean
         String producerId = producer.produceId();
         if (StringUtils.isNotBlank(producerId)) {
-            Object exist = applicationContext.getBean(producerId, parameterType);
+            Object exist = null;
+            try {
+                exist = applicationContext.getBean(producerId, parameterType);
+            } catch (BeansException e) {
+                return createProducerBean(producer, producerId);
+            }
             if (exist != null) {
                 return exist;
             } else {
-                ProducerBean producerBean = new ProducerBean();
-                Properties properties = buildBaseProperties(onsProperty);
-                properties.put(PropertyKeyConst.ProducerId,
-                        onsProperty.getProducers().stream().anyMatch(
-                                p -> StringUtils.equals(p.getProducerId(), producerId)
-                        ));
-                producerBean.setProperties(properties);
-                producerBean.start();
-                return producerBean;
+                return createProducerBean(producer, producerId);
             }
         } else {
             log.error("{} need consumerId " , JSON.toJSONString(producer));
@@ -126,28 +125,58 @@ public class OnsConfiguration implements ApplicationContextAware, BeanPostProces
         }
     }
 
+    private ProducerBean createProducerBean(OnsProducer producer, String producerId) {
+        ProducerBean producerBean = new ProducerBean();
+        Properties properties = buildBaseProperties(onsProperty);
+        //匹配配置文件中是否存在consumer，否这报错
+        OnsProperty.Producer p = onsProperty.getProducers().stream().filter(
+                x -> StringUtils.equals(x.getProducerId(), producerId)
+        ).findFirst().orElseThrow(OnsStarterException::new);
+        properties.put(PropertyKeyConst.ProducerId, p.getProducerId());
+        //topic 和tag用于receive message的时候
+        properties.put(OnsConstant.TOPIC, producer.topic());
+        properties.put(OnsConstant.TAG, producer.tag());
+        producerBean.setProperties(properties);
+        producerBean.start();
+        return producerBean;
+    }
+
     private Object getOrCreateConsumerBean(OnsConsumer consumer, Class<?> parameterType) {
         //去Springfactory中寻找有木有这个bean，没有的话创建一个，并放入Spring的factoryBean
         String consumerId = consumer.consumerId();
         if (StringUtils.isNotBlank(consumerId)) {
-            Object existConsumer = applicationContext.getBean(consumerId, parameterType);
+            Object existConsumer = null;
+            try {
+                existConsumer = applicationContext.getBean(consumerId, parameterType);
+            } catch (BeansException e) {
+                return createConsumerBean(consumer, consumerId);
+            }
             if (existConsumer != null) {
                 return existConsumer;
             } else {
-                ConsumerBean consumerBean = new ConsumerBean();
-                Properties properties = buildBaseProperties(onsProperty);
-                properties.put(PropertyKeyConst.ConsumerId,
-                        onsProperty.getConsumers().stream().anyMatch(
-                                c -> StringUtils.equals(c.getConsumerId(), consumerId)
-                        ));
-                consumerBean.setProperties(properties);
-                consumerBean.start();
-                return consumerBean;
+                return createConsumerBean(consumer, consumerId);
             }
         } else {
             log.error("{} need consumerId " , JSON.toJSONString(consumer));
             return null;
         }
+    }
+
+    private ConsumerBean createConsumerBean(OnsConsumer consumer, String consumerId) {
+        ConsumerBean consumerBean = new ConsumerBean();
+        Properties properties = buildBaseProperties(onsProperty);
+        //匹配配置文件中是否存在consumer，否这报错
+        OnsProperty.Consumer c = onsProperty.getConsumers().stream().filter(
+                x -> StringUtils.equals(x.getConsumerId(), consumerId)
+        ).findFirst().orElseThrow(OnsStarterException::new);
+        properties.put(PropertyKeyConst.ConsumerId, c.getConsumerId());
+
+
+        //topic 和tag用于createlistener的时候
+        properties.put(OnsConstant.TOPIC, consumer.topic());
+        properties.put(OnsConstant.TAG, consumer.tag());
+        consumerBean.setProperties(properties);
+        return consumerBean;
     }
 
     private Properties buildBaseProperties(OnsProperty onsProperty) {

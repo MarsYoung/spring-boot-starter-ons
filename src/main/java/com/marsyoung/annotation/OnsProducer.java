@@ -15,6 +15,8 @@ public @interface OnsProducer {
 
     String produceId() default "";
 
+    String topic() default "";
+
     String tag() default  "*";
 
 }

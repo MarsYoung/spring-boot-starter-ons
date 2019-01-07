@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static com.aliyun.openservices.ons.api.PropertyValueConst.CLUSTERING;
-import static com.aliyun.openservices.ons.api.impl.rocketmq.ONSChannel.ALIYUN;
 
 @ConfigurationProperties(prefix = "ons")
 public class OnsProperty {
@@ -14,7 +13,7 @@ public class OnsProperty {
     String accessKey;
     String secretKey;
     String onsChannel;
-    String onsAddress = ALIYUN.name();
+    String onsAddress;
     String nameServerAddress;
     List<Consumer> consumers = new ArrayList<>();
     List<Producer> producers = new ArrayList<>();

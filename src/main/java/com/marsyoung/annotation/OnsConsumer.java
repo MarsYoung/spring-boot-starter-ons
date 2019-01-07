@@ -15,6 +15,8 @@ public @interface OnsConsumer {
 
     String consumerId() default "";
 
+    String topic() default "";
+
     String tag() default  "*";
 
 
